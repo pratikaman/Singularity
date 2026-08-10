@@ -20,6 +20,7 @@ final class Controller: ObservableObject {
     weak var panel: NSWindow?
     private var overlay: OverlayWindow?
     private var renderer: BlackHoleRenderer?
+    private var source: LiveScreenSource?
     private var escMonitor: Any?
 
     func start() {
@@ -28,13 +29,12 @@ final class Controller: ObservableObject {
             CGRequestScreenCaptureAccess()
             status = "Allow Screen Recording in System Settings → Privacy & Security, then relaunch."
         } else {
-            status = "Capturing screen…"
+            status = "Tuning in to the screen…"
         }
         Task { [weak self] in
             guard let self else { return }
             do {
-                let image = try await ScreenGrabber.captureMainDisplay()
-                try self.beginEffect(with: image)
+                try await self.beginEffect()
             } catch {
                 self.status = "Capture failed — grant Screen Recording in System Settings → Privacy & Security, then relaunch."
                 NSLog("Capture error: \(error)")
@@ -42,11 +42,29 @@ final class Controller: ObservableObject {
         }
     }
 
-    private func beginEffect(with image: CGImage) throws {
+    private func beginEffect() async throws {
         guard let device = MTLCreateSystemDefaultDevice() else {
             throw SingularityError(message: "No Metal device")
         }
-        let renderer = try BlackHoleRenderer(device: device, image: image)
+        let source = LiveScreenSource(device: device)
+        source.onError = { [weak self] message in
+            Task { @MainActor in self?.status = "Capture stopped: \(message)" }
+        }
+        try await source.start()
+
+        // Wait for the first frame (up to ~3 s) so the overlay never flashes black.
+        for _ in 0..<60 where source.latestTexture() == nil {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        guard source.latestTexture() != nil else {
+            source.stop()
+            throw SingularityError(message: "No frames from the capture stream")
+        }
+
+        let renderer = try BlackHoleRenderer(device: device,
+                                             width: source.pixelWidth,
+                                             height: source.pixelHeight)
+        renderer.liveTexture = { [weak source] in source?.latestTexture() }
         renderer.intensity = { [weak self] in Float(self?.intensity ?? 1) }
         renderer.onFinished = { [weak self] in
             self?.status = "Nothing remains. Reset to restore reality."
@@ -66,8 +84,10 @@ final class Controller: ObservableObject {
         let overlay = OverlayWindow(contentRect: screen.frame, styleMask: .borderless,
                                     backing: .buffered, defer: false)
         overlay.level = .screenSaver
-        overlay.isOpaque = true
-        overlay.backgroundColor = .black
+        // Non-opaque so macOS doesn't mark the windows underneath as fully occluded —
+        // occluded apps may pause rendering, which would freeze the "live" feed.
+        overlay.isOpaque = false
+        overlay.backgroundColor = .clear
         overlay.hasShadow = false
         overlay.isReleasedWhenClosed = false
         overlay.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
@@ -89,8 +109,9 @@ final class Controller: ObservableObject {
 
         self.overlay = overlay
         self.renderer = renderer
+        self.source = source
         isRunning = true
-        status = "Feeding… Esc or Reset restores the screen."
+        status = "Feeding on your live screen… Esc or Reset restores it."
     }
 
     func reset() {
@@ -102,6 +123,8 @@ final class Controller: ObservableObject {
         overlay?.contentView = nil
         overlay = nil
         renderer = nil
+        source?.stop()
+        source = nil
         panel?.level = .normal
         panel?.makeKeyAndOrderFront(nil)
         isRunning = false

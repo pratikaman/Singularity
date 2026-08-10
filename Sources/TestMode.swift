@@ -2,6 +2,7 @@ import AppKit
 import CoreText
 import ImageIO
 import Metal
+import MetalKit
 
 // Headless verification: `Singularity --test --out=/some/dir` runs the simulation
 // offscreen against a synthetic desktop image and writes checkpoint PNGs.
@@ -17,8 +18,13 @@ func runOffscreenTest() throws {
         throw SingularityError(message: "No Metal device")
     }
     let img = makeTestImage(width: 1600, height: 1000)
-    let renderer = try BlackHoleRenderer(device: device, image: img)
+    let renderer = try BlackHoleRenderer(device: device, width: img.width, height: img.height)
     renderer.intensity = { 1 }
+    // Static stand-in for the live capture stream — same code path, frame never changes.
+    let loader = MTKTextureLoader(device: device)
+    let staticTex = try loader.newTexture(cgImage: normalizeImage(img),
+                                          options: [MTKTextureLoader.Option.SRGB: false])
+    renderer.liveTexture = { staticTex }
 
     let desc = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm,
                                                         width: img.width, height: img.height,

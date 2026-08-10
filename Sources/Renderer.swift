@@ -10,13 +10,12 @@ struct SingularityError: Error, LocalizedError {
 final class BlackHoleRenderer: NSObject, MTKViewDelegate {
     private let device: MTLDevice
     private let queue: MTLCommandQueue
-    private let copyPipeline: MTLRenderPipelineState
-    private let advectPipeline: MTLRenderPipelineState
+    private let fieldInitPipeline: MTLRenderPipelineState
+    private let fieldPipeline: MTLRenderPipelineState
     private let displayPipeline: MTLRenderPipelineState
-    private var texA: MTLTexture
-    private var texB: MTLTexture
-    private let seed: MTLTexture
-    private var needsSeed = true
+    private var fieldA: MTLTexture
+    private var fieldB: MTLTexture
+    private var needsInit = true
     private let aspect: Float
 
     private(set) var progress: Float = 0
@@ -29,6 +28,8 @@ final class BlackHoleRenderer: NSObject, MTKViewDelegate {
     var duration: Float = 45
     var intensity: () -> Float = { 1 }
     var onFinished: (() -> Void)?
+    /// Latest live capture frame; the sim holds (black screen) until this returns one.
+    var liveTexture: () -> MTLTexture? = { nil }
 
     struct Uniforms {
         var hole: SIMD2<Float>
@@ -42,7 +43,7 @@ final class BlackHoleRenderer: NSObject, MTKViewDelegate {
         var pad: Float = 0
     }
 
-    init(device: MTLDevice, image: CGImage) throws {
+    init(device: MTLDevice, width: Int, height: Int) throws {
         self.device = device
         guard let q = device.makeCommandQueue() else {
             throw SingularityError(message: "No Metal command queue")
@@ -57,27 +58,23 @@ final class BlackHoleRenderer: NSObject, MTKViewDelegate {
             d.colorAttachments[0].pixelFormat = format
             return try device.makeRenderPipelineState(descriptor: d)
         }
-        copyPipeline = try pipeline("copyFrag", format: .rgba16Float)
-        advectPipeline = try pipeline("advectFrag", format: .rgba16Float)
+        fieldInitPipeline = try pipeline("fieldInitFrag", format: .rgba32Float)
+        fieldPipeline = try pipeline("fieldFrag", format: .rgba32Float)
         displayPipeline = try pipeline("displayFrag", format: .bgra8Unorm)
 
-        let loader = MTKTextureLoader(device: device)
-        seed = try loader.newTexture(cgImage: normalizeImage(image),
-                                     options: [MTKTextureLoader.Option.SRGB: false])
-
-        let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float,
-                                                          width: image.width,
-                                                          height: image.height,
+        let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba32Float,
+                                                          width: width,
+                                                          height: height,
                                                           mipmapped: false)
         td.usage = [.renderTarget, .shaderRead]
         td.storageMode = .private
         guard let a = device.makeTexture(descriptor: td),
               let b = device.makeTexture(descriptor: td) else {
-            throw SingularityError(message: "Could not allocate simulation textures")
+            throw SingularityError(message: "Could not allocate flow-field textures")
         }
-        texA = a
-        texB = b
-        aspect = Float(image.width) / Float(image.height)
+        fieldA = a
+        fieldB = b
+        aspect = Float(width) / Float(height)
         super.init()
     }
 
@@ -98,6 +95,21 @@ final class BlackHoleRenderer: NSObject, MTKViewDelegate {
 
     @discardableResult
     func renderFrame(dt: Float, target: MTLTexture, drawable: CAMetalDrawable?) -> MTLCommandBuffer? {
+        guard let cb = queue.makeCommandBuffer() else { return nil }
+
+        guard let live = liveTexture() else {
+            // No capture frame yet — hold black, don't advance the meal.
+            let rpd = MTLRenderPassDescriptor()
+            rpd.colorAttachments[0].texture = target
+            rpd.colorAttachments[0].loadAction = .clear
+            rpd.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+            rpd.colorAttachments[0].storeAction = .store
+            cb.makeRenderCommandEncoder(descriptor: rpd)?.endEncoding()
+            if let drawable { cb.present(drawable) }
+            cb.commit()
+            return cb
+        }
+
         simTime += dt
         progress = min(simTime / duration, 1)
 
@@ -110,14 +122,13 @@ final class BlackHoleRenderer: NSObject, MTKViewDelegate {
         var u = Uniforms(hole: hole, radius: radius, aspect: aspect, dt: dt,
                          time: simTime, pull: 0.6, swirl: 1.2, progress: progress)
 
-        guard let cb = queue.makeCommandBuffer() else { return nil }
-        if needsSeed {
-            encode(cb, pipeline: copyPipeline, source: seed, dest: texA, uniforms: &u)
-            needsSeed = false
+        if needsInit {
+            encode(cb, pipeline: fieldInitPipeline, textures: [], dest: fieldA, uniforms: &u)
+            needsInit = false
         }
-        encode(cb, pipeline: advectPipeline, source: texA, dest: texB, uniforms: &u)
-        encode(cb, pipeline: displayPipeline, source: texB, dest: target, uniforms: &u)
-        swap(&texA, &texB)
+        encode(cb, pipeline: fieldPipeline, textures: [fieldA], dest: fieldB, uniforms: &u)
+        encode(cb, pipeline: displayPipeline, textures: [fieldB, live], dest: target, uniforms: &u)
+        swap(&fieldA, &fieldB)
         if let drawable { cb.present(drawable) }
         cb.commit()
 
@@ -132,14 +143,16 @@ final class BlackHoleRenderer: NSObject, MTKViewDelegate {
     }
 
     private func encode(_ cb: MTLCommandBuffer, pipeline: MTLRenderPipelineState,
-                        source: MTLTexture, dest: MTLTexture, uniforms: inout Uniforms) {
+                        textures: [MTLTexture], dest: MTLTexture, uniforms: inout Uniforms) {
         let rpd = MTLRenderPassDescriptor()
         rpd.colorAttachments[0].texture = dest
         rpd.colorAttachments[0].loadAction = .dontCare
         rpd.colorAttachments[0].storeAction = .store
         guard let enc = cb.makeRenderCommandEncoder(descriptor: rpd) else { return }
         enc.setRenderPipelineState(pipeline)
-        enc.setFragmentTexture(source, index: 0)
+        for (i, tex) in textures.enumerated() {
+            enc.setFragmentTexture(tex, index: i)
+        }
         enc.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
         enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         enc.endEncoding()
@@ -147,7 +160,7 @@ final class BlackHoleRenderer: NSObject, MTKViewDelegate {
 }
 
 /// Redraw any CGImage into a plain sRGB RGBA8 bitmap so MTKTextureLoader never
-/// chokes on exotic screenshot formats (10-bit XDR etc.).
+/// chokes on exotic formats (10-bit XDR etc.). Used by the --test path.
 func normalizeImage(_ image: CGImage) -> CGImage {
     guard let cs = CGColorSpace(name: CGColorSpace.sRGB),
           let ctx = CGContext(data: nil, width: image.width, height: image.height,

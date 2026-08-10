@@ -2,7 +2,7 @@
 
 A tiny Mac app that drops a black hole onto your screen and lets it eat everything.
 
-Press one button and a small, glowing black hole appears over your desktop. It drifts around, bending and stretching whatever is on screen, slowly swallowing your windows, icons and wallpaper. It grows as it feeds, flares up into a huge ring of light, and in the end the whole screen is black. Press **Reset** and your desktop is back, completely unharmed.
+Press one button and a small, glowing black hole appears over your desktop. It drifts around, bending and stretching whatever is on screen, slowly swallowing your windows, icons and wallpaper. And the screen stays *alive* while it happens — a playing video keeps playing right up until the moment it stretches, smears and disappears into the hole. The hole grows as it feeds, flares up into a huge ring of light, and in the end the whole screen is black. Press **Reset** and your desktop is back, completely unharmed.
 
 | Feeding time | Growing up |
 | --- | --- |
@@ -17,7 +17,7 @@ Press one button and a small, glowing black hole appears over your desktop. It d
 
 ## Is my stuff safe?
 
-Yes. The app takes a *photo* of your screen and feeds that photo to the black hole. Your real windows, files and apps sit untouched underneath the whole time. Reset simply removes the show.
+Yes. The app watches a live *video feed* of your screen (the same mechanism screen-sharing apps use) and feeds that video to the black hole. Your real windows, files and apps sit untouched underneath the whole time. Reset simply removes the show.
 
 ## First launch
 
@@ -35,8 +35,8 @@ That produces `Singularity.app` in this folder. No Xcode project needed.
 
 ## How it works (the slightly nerdy version)
 
-- The screen photo is captured with Apple's ScreenCaptureKit.
-- The black hole is a small GPU simulation written in Metal: every frame, each pixel of the photo is pulled a tiny step closer to the hole and rotated around it, so the picture genuinely *flows* into the hole rather than just fading out. Anything crossing the event horizon is gone for good, and darkness also creeps in from the edges of the screen.
+- The screen is captured live at 60 fps with Apple's ScreenCaptureKit, with the app's own windows excluded from the capture — otherwise the overlay would film itself and recurse into an infinite mirror.
+- The black hole is a small GPU simulation written in Metal. It doesn't warp the video frames directly — it warps a *flow field*: a map that records, for every point on screen, where that point should fetch its picture from. Every frame each map entry is pulled a tiny step closer to the hole and rotated around it, so screen content genuinely *flows* into the hole — while regions that haven't been eaten yet keep showing live, moving video. Anything crossing the event horizon is gone for good, and darkness also creeps in from the edges of the screen.
 - The glowing ring is a fake "accretion disk", plus a bit of gravitational lensing so the light near the hole bends the way it would around a real one.
 
 Made for fun on a rainy Sunday. Feed responsibly.

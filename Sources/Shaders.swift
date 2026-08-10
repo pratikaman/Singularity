@@ -1,4 +1,10 @@
 // Metal shaders compiled at runtime (avoids needing the Metal toolchain on beta systems).
+//
+// Live-screen design: instead of advecting a frozen image, we advect a FLOW FIELD —
+// an rgba32f ping-pong texture where rg = the screen uv each pixel should display
+// (a distortion map with full history baked in) and b = accumulated "consumed" mask.
+// The display pass looks up the latest live capture frame through that field, so
+// surviving regions keep playing live video while eaten regions stay eaten.
 
 let shaderSource = """
 #include <metal_stdlib>
@@ -29,20 +35,19 @@ vertex VOut fsq(uint vid [[vertex_id]]) {
     return o;
 }
 
-fragment float4 copyFrag(VOut in [[stage_in]],
-                         texture2d<float> src [[texture(0)]]) {
-    constexpr sampler s(filter::linear, address::clamp_to_edge);
-    return float4(src.sample(s, in.uv).rgb, 1.0);
+// Identity flow field: every pixel looks at itself, nothing consumed.
+fragment float4 fieldInitFrag(VOut in [[stage_in]]) {
+    return float4(in.uv, 0.0, 1.0);
 }
 
-// One simulation step: every pixel samples slightly further from the hole (content
-// marches inward over frames), rotated around it (swirl), and anything inside the
-// event horizon is consumed. Off-screen samples are black, so darkness also pours
-// in from the edges as the screen drains.
-fragment float4 advectFrag(VOut in [[stage_in]],
-                           texture2d<float> prev [[texture(0)]],
-                           constant Uniforms& U [[buffer(0)]]) {
-    constexpr sampler s(filter::linear, address::clamp_to_border, border_color::opaque_black);
+// One simulation step on the flow field: every pixel adopts the flow line slightly
+// further from the hole (content marches inward over frames), rotated around it
+// (swirl). Flow lines that fall off the screen, or cross the event horizon, are
+// marked consumed — so darkness pours in from the edges and trails the hole.
+fragment float4 fieldFrag(VOut in [[stage_in]],
+                          texture2d<float> prev [[texture(0)]],
+                          constant Uniforms& U [[buffer(0)]]) {
+    constexpr sampler s(filter::linear, address::clamp_to_edge);
 
     float2 p = float2(in.uv.x * U.aspect, in.uv.y);
     float2 c = float2(U.hole.x * U.aspect, U.hole.y);
@@ -55,26 +60,30 @@ fragment float4 advectFrag(VOut in [[stage_in]],
     float grip = (r + 0.02) * (r + 0.02);
 
     float pullAmt = U.dt * U.pull * frenzy * grip / (dist * dist + 0.01);
-    float ang     = U.dt * U.swirl * frenzy * grip / (dist * dist + (r * 0.5 + 0.01) * (r * 0.5 + 0.01));
-
+    float ang = U.dt * U.swirl * frenzy * grip / (dist * dist + (r * 0.5 + 0.01) * (r * 0.5 + 0.01));
     float ca = cos(ang), sa = sin(ang);
     float2 rd = float2(d.x * ca - d.y * sa, d.x * sa + d.y * ca);
     float2 sp = c + rd + dir * pullAmt;
+    float2 suv = float2(sp.x / U.aspect, sp.y);
 
-    float4 col = prev.sample(s, float2(sp.x / U.aspect, sp.y));
+    float4 f = prev.sample(s, suv);
+    float m = f.b;
+    if (any(suv < 0.0) || any(suv > 1.0)) { m = 1.0; }   // flow line fell off the screen
 
-    // consume inside the event horizon
     float eat = 1.0 - smoothstep(r * 0.85, r, dist);
-    col.rgb *= (1.0 - eat);
-    return float4(col.rgb, 1.0);
+    m = max(m, eat);
+    return float4(f.rg, m, 1.0);
 }
 
-// Presentation: gravitational lensing around the hole, hard black horizon,
-// accretion glow that dies out as the meal finishes so the end state is pure black.
+// Presentation: gravitational lensing around the hole, live capture looked up
+// through the flow field, hard black horizon, accretion glow that dies out as
+// the meal finishes so the end state is pure black.
 fragment float4 displayFrag(VOut in [[stage_in]],
-                            texture2d<float> tex [[texture(0)]],
+                            texture2d<float> field [[texture(0)]],
+                            texture2d<float> live [[texture(1)]],
                             constant Uniforms& U [[buffer(0)]]) {
-    constexpr sampler s(filter::linear, address::clamp_to_border, border_color::opaque_black);
+    constexpr sampler sf(filter::linear, address::clamp_to_edge);
+    constexpr sampler sl(filter::linear, address::clamp_to_border, border_color::opaque_black);
 
     float2 p = float2(in.uv.x * U.aspect, in.uv.y);
     float2 c = float2(U.hole.x * U.aspect, U.hole.y);
@@ -86,7 +95,9 @@ fragment float4 displayFrag(VOut in [[stage_in]],
     // light bending: rays near the horizon sample from further behind the hole
     float lens = (r * r * 0.85) / (dist + r * 0.35);
     float2 sp = c + dir * (dist + lens);
-    float3 col = tex.sample(s, float2(sp.x / U.aspect, sp.y)).rgb;
+    float4 f = field.sample(sf, float2(sp.x / U.aspect, sp.y));
+
+    float3 col = live.sample(sl, f.rg).rgb * (1.0 - f.b);
 
     // hard event horizon
     col *= smoothstep(r, r * 1.03, dist);
