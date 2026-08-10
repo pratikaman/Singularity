@@ -20,6 +20,7 @@ struct Uniforms {
     float  swirl;     // angular pull strength
     float  progress;  // 0..1 over the whole meal
     float  pad;
+    float2 mouse;     // pointer in uv space (y down); offscreen when unused
 };
 
 struct VOut {
@@ -75,12 +76,35 @@ fragment float4 fieldFrag(VOut in [[stage_in]],
     return float4(f.rg, m, 1.0);
 }
 
+// Cheap value noise + fbm for the accretion disk / halo texture.
+float hash21(float2 p) {
+    p = fract(p * float2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+}
+float vnoise(float2 p) {
+    float2 i = floor(p), f = fract(p);
+    float2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash21(i),                hash21(i + float2(1, 0)), u.x),
+               mix(hash21(i + float2(0, 1)), hash21(i + float2(1, 1)), u.x), u.y);
+}
+float fbm(float2 p) {
+    float v = 0.0, a = 0.5;
+    for (int i = 0; i < 4; i++) {
+        v += a * vnoise(p);
+        p = p * 2.03 + 19.19;
+        a *= 0.5;
+    }
+    return v;
+}
+
 // Presentation: live capture looked up through the flow field, then a
-// Gargantua-style black hole drawn on top — pure black shadow, a razor-thin
-// photon ring, a near-edge-on accretion disk whose near side crosses in FRONT
-// of the shadow, the far side's light lensed into arcs over and under it,
-// Doppler beaming brightening the approaching side. Everything fades late so
-// the end state is pure black.
+// Gargantua-style black hole drawn on top, styled after the Interstellar
+// shot: a blinding thin edge-on disk crossing in FRONT of the shadow with
+// wispy streaks streaming inward, the far side's light lensed into a soft
+// dome over the top and a tighter arc under the bottom, a razor photon ring,
+// and everything in pale cream/rose rather than lava orange, soft-clipped so
+// hot cores bloom to white. Fades late so the end state is pure black.
 fragment float4 displayFrag(VOut in [[stage_in]],
                             texture2d<float> field [[texture(0)]],
                             texture2d<float> live [[texture(1)]],
@@ -105,47 +129,71 @@ fragment float4 displayFrag(VOut in [[stage_in]],
     col *= smoothstep(r, r * 1.03, dist);
 
     float glowFade = 1.0 - smoothstep(0.78, 0.98, U.progress);
-    float q = dist / max(r, 1e-4);          // radius in units of the shadow
+    float q = dist / max(r, 1e-4);           // radius in units of the shadow
+    float2 e = d / max(r, 1e-4);             // position in shadow radii (y down)
+    float vert = abs(d.y) / max(dist, 1e-5); // 0 on the disk plane, 1 at the poles
+    float t = U.time;
 
-    // temperature ramp: white-hot inner edge -> orange -> deep ember red
-    float3 cHot = float3(1.65, 1.45, 1.25);
-    float3 cMid = float3(1.55, 0.72, 0.22);
-    float3 cOut = float3(0.42, 0.10, 0.03);
+    // Interstellar palette: white-hot core, warm cream, dusty rose haze
+    float3 cCore  = float3(1.00, 0.97, 0.92);
+    float3 cCream = float3(1.00, 0.86, 0.74);
+    float3 cRose  = float3(0.82, 0.58, 0.52);
 
-    // (1) near-edge-on accretion disk (y squashed hard): a thin band whose
-    // near half (below center; uv is y-down) passes in front of the shadow
-    float2 dpl = float2(d.x, d.y / 0.22);
-    float qd = length(dpl) / max(r, 1e-4);
-    float diskBand = smoothstep(1.08, 1.32, qd) * (1.0 - smoothstep(2.5, 3.4, qd));
-    float phi = atan2(dpl.y, dpl.x);
-    float om = 2.0 * pow(max(qd, 0.75), -1.5);        // Keplerian-ish rotation
-    float streaks = 0.68 + 0.32 * sin(phi * 7.0 - U.time * om * 3.0 + qd * 5.0)
-                              * sin(phi * 3.0 + U.time * om * 1.7);
-    float tt = clamp((qd - 1.08) / 2.3, 0.0, 1.0);
-    float3 diskCol = (tt < 0.4) ? mix(cHot, cMid, tt / 0.4)
-                                : mix(cMid, cOut, (tt - 0.4) / 0.6);
-    float occl = (d.y < 0.0) ? smoothstep(1.0, 1.08, q) : 1.0;   // far side hides behind shadow
+    float3 glow = float3(0.0);
 
-    // (2) lensed image of the far side: narrow arcs hugging the shadow,
-    // strongest directly above and below where the bent light folds over
-    float lensRing = smoothstep(1.01, 1.05, q) * (1.0 - smoothstep(1.14, 1.30, q));
-    float fold = 0.15 + 0.85 * pow(abs(d.y) / max(dist, 1e-5), 1.5);
-    float3 lensCol = mix(cHot, cMid, 0.35);
+    // (1) the edge-on disk: a blinding thin plane crossing in front of the
+    // shadow, its wisps streaming inward — this carries the animation
+    float ax = abs(e.x);
+    float nAmp = smoothstep(0.75, 1.10, q);  // wisps stay smooth where they cross the shadow
+    float w1 = mix(0.5, fbm(float2(ax * 1.7 + t * 0.6, e.y * 5.0)), nAmp);
+    float w2 = mix(0.5, fbm(float2(ax * 3.4 + t * 1.3, e.y * 9.0) + 31.7), nAmp);
+    float thick = (0.15 + 0.11 * exp(-ax * ax * 0.2)) * (0.6 + 0.8 * w1);
+    float plane = exp(-pow(e.y / max(thick, 1e-4), 2.0));
+    float reach = 1.0 - smoothstep(2.3, 5.5, ax);
+    float dop   = 1.0 + 0.35 * clamp(-e.x * 0.5, -0.6, 1.0);  // approaching side glares
+    float disk  = plane * reach * (0.30 + 2.8 * exp(-ax * ax * 0.16))
+                * (0.50 + 0.75 * w1 + 0.40 * w2) * dop;
+    glow += mix(cCream, cRose, smoothstep(1.3, 4.5, ax)) * disk;
+    // razor-bright centerline slicing straight across the sphere
+    glow += cCore * exp(-pow(e.y / 0.05, 2.0))
+          * (1.0 - smoothstep(1.6, 4.6, ax)) * dop * 1.3;
+
+    // (2) lensed halo: far-side disk light folded into a dome over the top
+    // and a tighter arc under the bottom, slowly swirling
+    float ang = atan2(d.y, d.x);
+    bool up = (d.y < 0.0);                   // uv is y-down
+    float haloR = up ? 1.30 : 1.22;
+    float haloW = 0.14 + 0.34 * vert;
+    float halo  = exp(-pow((q - haloR) / haloW, 2.0))
+                * smoothstep(0.90, 1.04, q)  // keep the shadow dark
+                * (up ? 1.0 : 0.85) * (0.30 + 0.70 * vert);
+    halo *= 0.75 + 0.5 * fbm(float2(ang * 2.0 - t * 0.4, q * 3.0));
+    glow += mix(cCore, cCream, clamp((q - 1.0) * 1.4, 0.0, 1.0)) * halo * 1.6;
 
     // (3) photon ring: razor-thin, brilliant, right at the shadow's edge
-    float photon = exp(-pow((dist - r * 1.02) / max(r * 0.016, 0.0015), 2.0));
+    // (width floor keeps it from aliasing away while the hole is tiny)
+    float pw = max(0.022, 0.002 / max(r, 1e-3));
+    float photon = exp(-pow((q - 1.04) / pw, 2.0))
+                 + 0.30 * exp(-pow((q - 1.15) / 0.05, 2.0));
+    glow += cCore * photon * 2.3;
 
-    // (4) Doppler beaming: the approaching (left) side burns brighter
-    float dop = clamp(1.0 + 0.65 * (-d.x / max(dist, 1e-5)), 0.35, 1.75);
+    // (4) rose-tinted bloom enveloping the whole structure; mostly kept out
+    // of the shadow so the sphere reads dark with just a breath of haze
+    float inShadow = 0.25 + 0.75 * smoothstep(0.85, 1.05, q);
+    glow += cCream * exp(-q * q * 0.55) * 0.30 * inShadow;
+    glow += cRose  * exp(-q * q * 0.10) * 0.15 * inShadow;
 
-    float3 glow = (diskCol * diskBand * streaks * occl * 0.95
-                 + lensCol * lensRing * fold * 0.5) * dop
-                + float3(1.7, 1.55, 1.3) * photon * 0.85;
+    // soft-clip: hot cores saturate to creamy white, tails stay soft (bloom)
+    glow = 1.0 - exp(-glow * 2.1);
     col += glow * glowFade;
 
-    // faint ambient warmth around the whole structure
-    float amb = exp(-pow((q - 1.6) / 0.9, 2.0)) * 0.05;
-    col += float3(1.0, 0.45, 0.15) * amb * glowFade;
+    // reality bubble: a small circle around the pointer always shows the live,
+    // un-warped, un-eaten screen, so whatever you aim at is really there and
+    // clickable; it dissolves with the finale so the end state stays black
+    float2 mp = float2(U.mouse.x * U.aspect, U.mouse.y);
+    float bubble = (1.0 - smoothstep(0.055, 0.085, length(p - mp)))
+                 * (1.0 - smoothstep(0.90, 0.98, U.progress));
+    col = mix(col, live.sample(sl, in.uv).rgb, bubble);
 
     return float4(col, 1.0);
 }

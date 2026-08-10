@@ -22,6 +22,7 @@ final class Controller: ObservableObject {
     private var renderer: BlackHoleRenderer?
     private var source: LiveScreenSource?
     private var escMonitor: Any?
+    private var escGlobalMonitor: Any?
 
     func start() {
         guard !isRunning else { return }
@@ -75,6 +76,15 @@ final class Controller: ObservableObject {
         } ?? NSScreen.main
         guard let screen else { throw SingularityError(message: "No screen") }
 
+        // Feed the pointer position to the shader's reality bubble
+        // (mouseLocation is bottom-left origin; the shader's uv is y-down).
+        let screenFrame = screen.frame
+        renderer.mouseUV = {
+            let loc = NSEvent.mouseLocation
+            return SIMD2<Float>(Float((loc.x - screenFrame.minX) / screenFrame.width),
+                                Float(1 - (loc.y - screenFrame.minY) / screenFrame.height))
+        }
+
         let view = MTKView(frame: screen.frame, device: device)
         view.colorPixelFormat = MTLPixelFormat.bgra8Unorm
         view.preferredFramesPerSecond = 120
@@ -89,15 +99,18 @@ final class Controller: ObservableObject {
         overlay.isOpaque = false
         overlay.backgroundColor = .clear
         overlay.hasShadow = false
+        // Click-through: the desktop stays fully usable while it's being eaten —
+        // clicks land on the real (live) windows underneath the show.
+        overlay.ignoresMouseEvents = true
         overlay.isReleasedWhenClosed = false
         overlay.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         overlay.contentView = view
         overlay.onEscape = { [weak self] in self?.reset() }
-        overlay.makeKeyAndOrderFront(nil)
+        overlay.orderFrontRegardless()
 
-        // keep the control panel reachable above the overlay
+        // keep the control panel reachable (and key) above the overlay
         panel?.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
-        panel?.orderFrontRegardless()
+        panel?.makeKeyAndOrderFront(nil)
 
         escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
             if e.keyCode == 53, self?.isRunning == true {
@@ -106,18 +119,31 @@ final class Controller: ObservableObject {
             }
             return e
         }
+        // The overlay is click-through, so a click can focus another app and take
+        // Esc with it. This global monitor catches Esc anyway — but macOS only
+        // delivers global key events if the app has Accessibility trust, so the
+        // floating Reset button stays the guaranteed way out.
+        escGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] e in
+            if e.keyCode == 53, self?.isRunning == true {
+                self?.reset()
+            }
+        }
 
         self.overlay = overlay
         self.renderer = renderer
         self.source = source
         isRunning = true
-        status = "Feeding on your live screen… Esc or Reset restores it."
+        status = "Feeding… your Mac stays clickable. Esc or Reset restores it."
     }
 
     func reset() {
         if let m = escMonitor {
             NSEvent.removeMonitor(m)
             escMonitor = nil
+        }
+        if let m = escGlobalMonitor {
+            NSEvent.removeMonitor(m)
+            escGlobalMonitor = nil
         }
         overlay?.orderOut(nil)
         overlay?.contentView = nil

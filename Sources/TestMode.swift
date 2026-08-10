@@ -35,7 +35,16 @@ func runOffscreenTest() throws {
         throw SingularityError(message: "No offscreen target")
     }
 
-    let checkpoints: [Float] = [0.04, 0.15, 0.30, 0.50, 0.70, 0.85, 0.95, 1.0]
+    // --anim captures ~20 back-to-back frames around mid-meal instead of the
+    // spread checkpoints, to eyeball the accretion-disk animation.
+    let anim = CommandLine.arguments.contains("--anim")
+    if anim {
+        // park a fake pointer on screen so the reality bubble shows up in frames
+        renderer.mouseUV = { SIMD2<Float>(0.30, 0.42) }
+    }
+    let checkpoints: [Float] = anim
+        ? (0..<20).map { 0.5 + Float($0) * 0.00075 }
+        : [0.04, 0.15, 0.30, 0.50, 0.70, 0.85, 0.95, 1.0]
     var next = 0
     var frame = 0
     let dt: Float = 1.0 / 30.0
@@ -43,7 +52,7 @@ func runOffscreenTest() throws {
         let cb = renderer.renderFrame(dt: dt, target: target, drawable: nil)
         if renderer.progress >= checkpoints[next] {
             cb?.waitUntilCompleted()
-            let path = "\(outDir)/frame_\(String(format: "%03d", Int(checkpoints[next] * 100))).png"
+            let path = "\(outDir)/frame_\(String(format: "%05d", Int((checkpoints[next] * 10000).rounded()))).png"
             try savePNG(texture: target, to: path)
             print("progress \(checkpoints[next]) -> \(path)")
             next += 1

@@ -13,7 +13,8 @@ Press one button and a small, glowing black hole appears over your desktop. It d
 1. Open **Singularity.app** — a small control panel appears.
 2. Set the **Appetite** slider: from *gentle nibble* (a slow three-minute meal) to *ravenous* (everything gone in seconds). You can move it while the black hole is feeding.
 3. Click **Unleash** and watch your screen get devoured.
-4. Click **Reset** (or press **Esc**) any time to get your screen back instantly.
+4. Keep working if you like — the show is click-through, so your mouse and keyboard still reach the real apps underneath while they're being eaten. A small circle of reality follows your pointer, showing the true live screen through the distortion so what you're aiming at is always what you'll click.
+5. Click **Reset** (or press **Esc**) any time to get your screen back instantly. (If you've clicked into another app, Esc goes to that app instead — the floating Reset button always works.)
 
 ## Is my stuff safe?
 
@@ -39,7 +40,7 @@ That produces `Singularity.app` in this folder. No Xcode project needed.
 
 - The screen is captured live at 60 fps with Apple's ScreenCaptureKit, with the app's own windows excluded from the capture — otherwise the overlay would film itself and recurse into an infinite mirror.
 - The black hole is a small GPU simulation written in Metal. It doesn't warp the video frames directly — it warps a *flow field*: a map that records, for every point on screen, where that point should fetch its picture from. Every frame each map entry is pulled a tiny step closer to the hole and rotated around it, so screen content genuinely *flows* into the hole — while regions that haven't been eaten yet keep showing live, moving video. Anything crossing the event horizon is gone for good, and darkness also creeps in from the edges of the screen.
-- The glowing ring is a fake "accretion disk", plus a bit of gravitational lensing so the light near the hole bends the way it would around a real one.
-- There's a hidden test mode for hacking on the effect without any permissions: `Singularity.app/Contents/MacOS/Singularity --test --out=/some/folder` runs the whole simulation against a built-in synthetic image and writes checkpoint PNGs (that's how the pictures above were made).
+- The look is modeled on Gargantua from *Interstellar*: a thin edge-on accretion disk crossing in front of the shadow with wispy streaks that stream inward, the far side's light gravitationally lensed into a glowing dome above and an arc below, and a razor-thin photon ring hugging the shadow — all in pale cream and rose, soft-clipped so the hot cores bloom to white. The disk and halo are textured with animated noise, so the rings visibly churn and flow the whole time.
+- There's a hidden test mode for hacking on the effect without any permissions: `Singularity.app/Contents/MacOS/Singularity --test --out=/some/folder` runs the whole simulation against a built-in synthetic image and writes checkpoint PNGs (that's how the pictures above were made). Add `--anim` to dump ~20 back-to-back frames mid-meal for checking the disk animation.
 
 Made for fun on a rainy Sunday. Feed responsibly.

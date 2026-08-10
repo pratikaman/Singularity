@@ -41,7 +41,12 @@ final class BlackHoleRenderer: NSObject, MTKViewDelegate {
         var swirl: Float
         var progress: Float
         var pad: Float = 0
+        var mouse: SIMD2<Float> = SIMD2<Float>(-10, -10)
     }
+
+    /// Pointer position in uv space (y down) for the reality bubble;
+    /// defaults to offscreen so headless/test renders are unaffected.
+    var mouseUV: () -> SIMD2<Float> = { SIMD2<Float>(-10, -10) }
 
     init(device: MTLDevice, width: Int, height: Int) throws {
         self.device = device
@@ -120,7 +125,8 @@ final class BlackHoleRenderer: NSObject, MTKViewDelegate {
                                 0.5 + amp * sin(simTime * 0.24 + 0.6))
 
         var u = Uniforms(hole: hole, radius: radius, aspect: aspect, dt: dt,
-                         time: simTime, pull: 0.6, swirl: 1.2, progress: progress)
+                         time: simTime, pull: 0.6, swirl: 1.2, progress: progress,
+                         mouse: mouseUV())
 
         if needsInit {
             encode(cb, pipeline: fieldInitPipeline, textures: [], dest: fieldA, uniforms: &u)
