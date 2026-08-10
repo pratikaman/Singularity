@@ -75,9 +75,12 @@ fragment float4 fieldFrag(VOut in [[stage_in]],
     return float4(f.rg, m, 1.0);
 }
 
-// Presentation: gravitational lensing around the hole, live capture looked up
-// through the flow field, hard black horizon, accretion glow that dies out as
-// the meal finishes so the end state is pure black.
+// Presentation: live capture looked up through the flow field, then a
+// Gargantua-style black hole drawn on top — pure black shadow, a razor-thin
+// photon ring, a near-edge-on accretion disk whose near side crosses in FRONT
+// of the shadow, the far side's light lensed into arcs over and under it,
+// Doppler beaming brightening the approaching side. Everything fades late so
+// the end state is pure black.
 fragment float4 displayFrag(VOut in [[stage_in]],
                             texture2d<float> field [[texture(0)]],
                             texture2d<float> live [[texture(1)]],
@@ -92,23 +95,57 @@ fragment float4 displayFrag(VOut in [[stage_in]],
     float2 dir = d / max(dist, 1e-5);
     float r = U.radius;
 
-    // light bending: rays near the horizon sample from further behind the hole
+    // light bending of the screen content behind the hole
     float lens = (r * r * 0.85) / (dist + r * 0.35);
     float2 sp = c + dir * (dist + lens);
     float4 f = field.sample(sf, float2(sp.x / U.aspect, sp.y));
-
     float3 col = live.sample(sl, f.rg).rgb * (1.0 - f.b);
 
-    // hard event horizon
+    // the shadow: pure black silhouette
     col *= smoothstep(r, r * 1.03, dist);
 
-    // accretion glow: a hot inner ring plus a soft outer halo
     float glowFade = 1.0 - smoothstep(0.78, 0.98, U.progress);
-    float halo = exp(-pow((dist - r * 1.30) / max(r * 0.40, 0.012), 2.0));
-    float ring = exp(-pow((dist - r * 1.06) / max(r * 0.10, 0.005), 2.0));
-    float flicker = 0.9 + 0.1 * sin(U.time * 7.0 + dist * 40.0);
-    col += (float3(1.0, 0.45, 0.12) * halo * 0.35 +
-            float3(1.0, 0.85, 0.55) * ring * 0.95) * glowFade * flicker;
+    float q = dist / max(r, 1e-4);          // radius in units of the shadow
+
+    // temperature ramp: white-hot inner edge -> orange -> deep ember red
+    float3 cHot = float3(1.65, 1.45, 1.25);
+    float3 cMid = float3(1.55, 0.72, 0.22);
+    float3 cOut = float3(0.42, 0.10, 0.03);
+
+    // (1) near-edge-on accretion disk (y squashed hard): a thin band whose
+    // near half (below center; uv is y-down) passes in front of the shadow
+    float2 dpl = float2(d.x, d.y / 0.22);
+    float qd = length(dpl) / max(r, 1e-4);
+    float diskBand = smoothstep(1.08, 1.32, qd) * (1.0 - smoothstep(2.5, 3.4, qd));
+    float phi = atan2(dpl.y, dpl.x);
+    float om = 2.0 * pow(max(qd, 0.75), -1.5);        // Keplerian-ish rotation
+    float streaks = 0.68 + 0.32 * sin(phi * 7.0 - U.time * om * 3.0 + qd * 5.0)
+                              * sin(phi * 3.0 + U.time * om * 1.7);
+    float tt = clamp((qd - 1.08) / 2.3, 0.0, 1.0);
+    float3 diskCol = (tt < 0.4) ? mix(cHot, cMid, tt / 0.4)
+                                : mix(cMid, cOut, (tt - 0.4) / 0.6);
+    float occl = (d.y < 0.0) ? smoothstep(1.0, 1.08, q) : 1.0;   // far side hides behind shadow
+
+    // (2) lensed image of the far side: narrow arcs hugging the shadow,
+    // strongest directly above and below where the bent light folds over
+    float lensRing = smoothstep(1.01, 1.05, q) * (1.0 - smoothstep(1.14, 1.30, q));
+    float fold = 0.15 + 0.85 * pow(abs(d.y) / max(dist, 1e-5), 1.5);
+    float3 lensCol = mix(cHot, cMid, 0.35);
+
+    // (3) photon ring: razor-thin, brilliant, right at the shadow's edge
+    float photon = exp(-pow((dist - r * 1.02) / max(r * 0.016, 0.0015), 2.0));
+
+    // (4) Doppler beaming: the approaching (left) side burns brighter
+    float dop = clamp(1.0 + 0.65 * (-d.x / max(dist, 1e-5)), 0.35, 1.75);
+
+    float3 glow = (diskCol * diskBand * streaks * occl * 0.95
+                 + lensCol * lensRing * fold * 0.5) * dop
+                + float3(1.7, 1.55, 1.3) * photon * 0.85;
+    col += glow * glowFade;
+
+    // faint ambient warmth around the whole structure
+    float amb = exp(-pow((q - 1.6) / 0.9, 2.0)) * 0.05;
+    col += float3(1.0, 0.45, 0.15) * amb * glowFade;
 
     return float4(col, 1.0);
 }
