@@ -25,5 +25,15 @@ swiftc -O \
   -framework ImageIO
 
 cp Info.plist "$APP/Contents/Info.plist"
-codesign --force --sign - "$APP"
-echo "Built $APP"
+
+# Sign with a stable local identity when available so the Screen Recording
+# permission survives rebuilds (ad-hoc signatures change every build, and TCC
+# treats each one as a brand-new app). Falls back to ad-hoc elsewhere.
+IDENTITY="Pratik Dev Signing"
+if security find-identity -v -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then
+  codesign --force --sign "$IDENTITY" "$APP"
+  echo "Built $APP (signed: $IDENTITY)"
+else
+  codesign --force --sign - "$APP"
+  echo "Built $APP (signed: ad-hoc)"
+fi
