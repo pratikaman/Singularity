@@ -8,6 +8,8 @@
 	<string>Singularity</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.pratikaman.singularity</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleExecutable</key>
 	<string>Singularity</string>
 	<key>CFBundlePackageType</key>

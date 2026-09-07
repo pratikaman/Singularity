@@ -17,7 +17,10 @@ func runOffscreenTest() throws {
     guard let device = MTLCreateSystemDefaultDevice() else {
         throw SingularityError(message: "No Metal device")
     }
-    let img = makeTestImage(width: 1600, height: 1000)
+    // --size=WxH renders at another resolution (e.g. the real display's) for timing
+    let size = CommandLine.arguments.first(where: { $0.hasPrefix("--size=") })
+        .map { $0.dropFirst(7).split(separator: "x").compactMap { Int($0) } } ?? [1600, 1000]
+    let img = makeTestImage(width: size[0], height: size[1])
     let renderer = try BlackHoleRenderer(device: device, width: img.width, height: img.height)
     renderer.intensity = { 1 }
     // Static stand-in for the live capture stream — same code path, frame never changes.
@@ -48,8 +51,26 @@ func runOffscreenTest() throws {
     var next = 0
     var frame = 0
     let dt: Float = 1.0 / 30.0
+    var maxGPU = 0.0, firstGPU = 0.0, seen = 0
+    let lock = NSLock()
+    // --profile serialises frames so each GPU time is exact, and lists slow ones
+    let profile = CommandLine.arguments.contains("--profile")
+    renderer.willCommit = { cb in
+        let phase = renderer.bakePhase
+        cb.addCompletedHandler { cb in
+            lock.lock()
+            let t = cb.gpuEndTime - cb.gpuStartTime
+            if seen == 0 { firstGPU = t } else { maxGPU = max(maxGPU, t) }
+            if profile && seen > 0 && t > 0.008 {
+                print("slow frame \(seen) p=\(String(format: "%.2f", renderer.progress)) phase=\(phase == 0 ? "bake" : "refine"): \(Int(t * 1000)) ms")
+            }
+            seen += 1
+            lock.unlock()
+        }
+    }
     while next < checkpoints.count && frame < 20000 {
         let cb = renderer.renderFrame(dt: dt, target: target, drawable: nil)
+        if profile { cb?.waitUntilCompleted() }
         if renderer.progress >= checkpoints[next] {
             cb?.waitUntilCompleted()
             let path = "\(outDir)/frame_\(String(format: "%05d", Int((checkpoints[next] * 10000).rounded()))).png"
@@ -64,7 +85,7 @@ func runOffscreenTest() throws {
     let cb = renderer.renderFrame(dt: dt, target: target, drawable: nil)
     cb?.waitUntilCompleted()
     try savePNG(texture: target, to: "\(outDir)/frame_end.png")
-    print("done, \(frame) frames")
+    print("done, \(frame) frames; first frame (full bake) \(String(format: "%.0f", firstGPU * 1000)) ms, slowest after that \(String(format: "%.1f", maxGPU * 1000)) ms")
 }
 
 func makeTestImage(width: Int, height: Int) -> CGImage {

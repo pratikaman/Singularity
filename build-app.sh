@@ -26,6 +26,16 @@ swiftc -O \
 
 cp Info.plist "$APP/Contents/Info.plist"
 
+# App icon: assets/icon.png (1024x1024) -> AppIcon.icns, built with the stock tools.
+ICONSET="$(mktemp -d)/AppIcon.iconset"
+mkdir -p "$ICONSET"
+for s in 16 32 128 256 512; do
+  sips -z $s $s assets/icon.png --out "$ICONSET/icon_${s}x${s}.png" >/dev/null
+  sips -z $((s*2)) $((s*2)) assets/icon.png --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null
+done
+iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
+rm -rf "$(dirname "$ICONSET")"
+
 # Sign with a stable local identity when available so the Screen Recording
 # permission survives rebuilds (ad-hoc signatures change every build, and TCC
 # treats each one as a brand-new app). Falls back to ad-hoc elsewhere.

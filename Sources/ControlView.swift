@@ -74,16 +74,8 @@ struct ControlView: View {
     }
 
     private var holeIcon: some View {
-        ZStack {
-            Circle()
-                .fill(RadialGradient(colors: [.orange.opacity(0.75), .clear],
-                                     center: .center, startRadius: 15, endRadius: 34))
-                .frame(width: 68, height: 68)
-            Circle()
-                .fill(.black)
-                .frame(width: 32, height: 32)
-                .overlay(Circle().stroke(Color.orange.opacity(0.9), lineWidth: 1.5))
-                .shadow(color: .orange.opacity(0.8), radius: 9)
-        }
+        Image(nsImage: NSApp.applicationIconImage)
+            .resizable()
+            .frame(width: 84, height: 84)
     }
 }
