@@ -28,15 +28,30 @@ Yes. The app watches a live *video feed* of your screen (the same mechanism scre
 
 The app needs macOS's **Screen Recording** permission to see your screen. The first time you click Unleash, macOS will ask — allow it in **System Settings → Privacy & Security → Screen Recording**, then relaunch the app once.
 
-## Building it yourself
+## Installing
 
-You need a Mac with Apple Silicon and the Xcode command line tools. Then:
+There's no prebuilt download — the app builds from source in a few seconds. You need a Mac with Apple Silicon and the Xcode command line tools (`xcode-select --install` if you don't have them).
+
+**From the terminal:**
 
 ```bash
+git clone https://github.com/pratikaman/Singularity.git
+cd Singularity
 ./build-app.sh
+open Singularity.app
 ```
 
-That produces `Singularity.app` in this folder. No Xcode project needed.
+That produces `Singularity.app` in the folder — drag it into Applications if you want to keep it. No Xcode project needed.
+
+**With an AI coding agent:** paste this prompt into Claude Code, Codex, Cursor or similar and let it do the steps above for you.
+
+```
+Install Singularity (https://github.com/pratikaman/Singularity) on this Mac: clone the repo,
+install the Xcode command line tools first if `swiftc` is missing, run ./build-app.sh inside the
+repo, move the resulting Singularity.app into /Applications and open it. macOS will ask for
+Screen Recording permission the first time I click Unleash — remind me to allow it in
+System Settings → Privacy & Security → Screen Recording and to relaunch the app once after that.
+```
 
 **One gotcha if you rebuild often:** macOS ties the Screen Recording permission to the app's code signature. The build script signs with a throwaway ("ad-hoc") signature by default, which changes on every build — so after each rebuild, macOS thinks it's a brand-new app and asks for permission again. To make the permission stick, create a self-signed code-signing certificate once (Keychain Access → Certificate Assistant → Create a Certificate → type *Code Signing*), put its name in the `IDENTITY` variable in `build-app.sh`, and every rebuild will be recognized as the same app.
 
