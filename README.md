@@ -1,4 +1,8 @@
-# Singularity 🕳️
+<p align="center">
+  <img src="assets/icon.png" width="160" alt="Singularity app icon: a black hole pulling in folders, documents and a cursor">
+</p>
+
+<h1 align="center">Singularity</h1>
 
 A tiny Mac app that drops a black hole onto your screen and lets it eat everything.
 
