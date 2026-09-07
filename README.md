@@ -2,11 +2,11 @@
 
 A tiny Mac app that drops a black hole onto your screen and lets it eat everything.
 
-Press one button and a small, glowing black hole appears over your desktop. It drifts around, bending and stretching whatever is on screen, slowly swallowing your windows, icons and wallpaper. And the screen stays *alive* while it happens — a playing video keeps playing right up until the moment it stretches, smears and disappears into the hole. The hole grows as it feeds, flares up into a huge ring of light, and in the end the whole screen is black. Press **Reset** and your desktop is back, completely unharmed.
+Press one button and a small black hole appears over your desktop, wrapped in a thin, blazing accretion disk. It drifts around, bending the light of whatever is on screen — your windows get stretched into an Einstein ring around it — and slowly swallows them, icons, wallpaper and all. And the screen stays *alive* while it happens — a playing video keeps playing right up until the moment it stretches, smears and disappears into the hole. The hole grows as it feeds, until the disk fills the screen like the *Interstellar* shot, and in the end everything is black. Press **Reset** and your desktop is back, completely unharmed.
 
 | Feeding time | Growing up |
 | --- | --- |
-| ![The black hole pulling screen content into itself](assets/demo-feeding.png) | ![The black hole grown large, with a glowing ring](assets/demo-ring.png) |
+| ![The black hole lensing screen content into an Einstein ring while pulling it in](assets/demo-feeding.png) | ![The black hole grown large: the accretion disk, photon ring and lensed desktop](assets/demo-ring.png) |
 
 ## How to use it
 
@@ -43,5 +43,9 @@ That produces `Singularity.app` in this folder. No Xcode project needed.
 - The black hole itself is a Metal port of Vercel's [vgpu "optimized black hole"](https://vgpu.sh/examples/optimized-black-hole): light rays are traced through Schwarzschild spacetime once into a G-buffer (where each ray crosses the accretion disk, and where it ends up in the sky), boundary pixels are refined with 16 sub-rays for antialiasing, and every frame the disk is shaded from a 3D noise volume with Doppler beaming and gravitational redshift, bloomed through a three-level pyramid and tone-mapped — the monochrome *Interstellar* look. Because that bake is just a zoom-and-pan of the image plane, the app re-uses it as the hole moves and grows, re-baking continuously in slices so it never hitches.
 - Your desktop is the black hole's sky: the traced ray directions are mapped back onto the screen, so what you see around the hole is your real windows, gravitationally lensed into an Einstein ring. Where the desktop has already been eaten, a lensed star field shows through instead.
 - There's a hidden test mode for hacking on the effect without any permissions: `Singularity.app/Contents/MacOS/Singularity --test --out=/some/folder` runs the whole simulation against a built-in synthetic image and writes checkpoint PNGs (that's how the pictures above were made). Add `--anim` to dump ~20 back-to-back frames mid-meal for checking the disk animation, `--size=WxH` to render at another resolution, and `--profile` to list slow GPU frames.
+
+## Credits
+
+The black hole renderer is a Metal port of the [optimized black hole](https://vgpu.sh/examples/optimized-black-hole) example from Vercel's [vgpu](https://github.com/vercel-labs/vgpu).
 
 Made for fun on a rainy Sunday. Feed responsibly.
