@@ -12,22 +12,6 @@ Press one button and a small black hole appears over your desktop, wrapped in a 
 | --- | --- |
 | ![The black hole lensing screen content into an Einstein ring while pulling it in](assets/demo-feeding.png) | ![The black hole grown large: the accretion disk, photon ring and lensed desktop](assets/demo-ring.png) |
 
-## How to use it
-
-1. Open **Singularity.app** — a small control panel appears.
-2. Set the **Appetite** slider: from *gentle nibble* (a slow three-minute meal) to *ravenous* (everything gone in seconds). You can move it while the black hole is feeding.
-3. Click **Unleash** and watch your screen get devoured.
-4. Keep working if you like — the show is click-through, so your mouse and keyboard still reach the real apps underneath while they're being eaten. A small circle of reality follows your pointer, showing the true live screen through the distortion so what you're aiming at is always what you'll click.
-5. Click **Reset** (or press **Esc**) any time to get your screen back instantly. (If you've clicked into another app, Esc goes to that app instead — the floating Reset button always works.)
-
-## Is my stuff safe?
-
-Yes. The app watches a live *video feed* of your screen (the same mechanism screen-sharing apps use) and feeds that video to the black hole. Your real windows, files and apps sit untouched underneath the whole time. Reset simply removes the show.
-
-## First launch
-
-The app needs macOS's **Screen Recording** permission to see your screen. The first time you click Unleash, macOS will ask — allow it in **System Settings → Privacy & Security → Screen Recording**, then relaunch the app once.
-
 ## Installing
 
 There's no prebuilt download — the app builds from source in a few seconds. You need a Mac with Apple Silicon and the Xcode command line tools (`xcode-select --install` if you don't have them).
@@ -54,6 +38,22 @@ System Settings → Privacy & Security → Screen Recording and to relaunch the 
 ```
 
 **One gotcha if you rebuild often:** macOS ties the Screen Recording permission to the app's code signature. The build script signs with a throwaway ("ad-hoc") signature by default, which changes on every build — so after each rebuild, macOS thinks it's a brand-new app and asks for permission again. To make the permission stick, create a self-signed code-signing certificate once (Keychain Access → Certificate Assistant → Create a Certificate → type *Code Signing*), put its name in the `IDENTITY` variable in `build-app.sh`, and every rebuild will be recognized as the same app.
+
+## How to use it
+
+1. Open **Singularity.app** — a small control panel appears.
+2. Set the **Appetite** slider: from *gentle nibble* (a slow three-minute meal) to *ravenous* (everything gone in seconds). You can move it while the black hole is feeding.
+3. Click **Unleash** and watch your screen get devoured.
+4. Keep working if you like — the show is click-through, so your mouse and keyboard still reach the real apps underneath while they're being eaten. A small circle of reality follows your pointer, showing the true live screen through the distortion so what you're aiming at is always what you'll click.
+5. Click **Reset** (or press **Esc**) any time to get your screen back instantly. (If you've clicked into another app, Esc goes to that app instead — the floating Reset button always works.)
+
+## Is my stuff safe?
+
+Yes. The app watches a live *video feed* of your screen (the same mechanism screen-sharing apps use) and feeds that video to the black hole. Your real windows, files and apps sit untouched underneath the whole time. Reset simply removes the show.
+
+## First launch
+
+The app needs macOS's **Screen Recording** permission to see your screen. The first time you click Unleash, macOS will ask — allow it in **System Settings → Privacy & Security → Screen Recording**, then relaunch the app once.
 
 ## How it works (the slightly nerdy version)
 
