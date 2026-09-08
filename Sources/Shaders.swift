@@ -935,6 +935,9 @@ fragment float4 compositeFrag(VOut in [[stage_in]],
 
 // ===================================================================== display
 
+constant float LENS_NEAR = 3.0;    // full lensing inside this (disk reaches ~3.4, Einstein ring ~2)
+constant float LENS_FAR = 16.0;    // no displacement beyond this
+
 // Undeflected camera direction of a screen pixel under the CURRENT hole state
 // (fallback for pixels whose sky direction is unavailable).
 float3 pixelDirection(float2 uv, constant Uniforms& U) {
@@ -984,6 +987,14 @@ fragment float4 displayFrag(VOut in [[stage_in]],
     float2 ep = t / U.tanPsi;
     float c = cos(U.roll), s = sin(U.roll);
     float2 e = float2(ep.x * c + ep.y * s, -ep.x * s + ep.y * c);
+
+    // Deflection only falls off as 1/distance, so even a tiny hole would shift
+    // the whole desktop outward (it reads as the screen zooming). Keep the
+    // physics near the hole and fade the displacement out further away, so the
+    // far desktop stays exactly where it is. Radii are in shadow radii.
+    float2 ePix = float2((uv.x - U.hole.x) * U.aspect, U.hole.y - uv.y) / U.radius;
+    float lensWindow = 1.0 - smoothstep(LENS_NEAR, LENS_FAR, length(ePix));
+    e = ePix + (e - ePix) * lensWindow;
     float2 luv = U.hole + float2(e.x / U.aspect, -e.y) * U.radius;
 
     float4 f = field.sample(linClamp, luv);
